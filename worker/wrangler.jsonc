@@ -1,0 +1,7 @@
+{
+  "name": "voice-cleaner",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  // Public HTTPS address of the VPS audio API. Set the token with: npx wrangler secret put VPS_TOKEN
+  "vars": { "VPS_URL": "https://audio.example.com" }
+}
