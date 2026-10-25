@@ -1,6 +1,6 @@
 """Clean a recording and compare before/after: loudness, peak, noise floor, speech spread, spectrograms.
 
-Usage: python compare.py IN OUTDIR
+Usage: python compare.py IN OUTDIR [--cut-fillers]
 """
 import os
 import re
@@ -32,10 +32,10 @@ def stats(path):
     }
 
 
-def main(src, out):
+def main(src, out, cut_fillers=False):
     os.makedirs(out, exist_ok=True)
     dst = os.path.join(out, "after.wav")
-    info = clean.clean(src, dst, target=-16)
+    info = clean.clean(src, dst, target=-16, cut_fillers=cut_fillers)
     clean.ff(["-i", src, "-c:a", "pcm_s24le", os.path.join(out, "before.wav")])
     before, after = stats(src), stats(dst)
     print(f"chain: {info}\n{'metric':28}{'before':>10}{'after':>10}")
@@ -50,4 +50,4 @@ def main(src, out):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:3])
+    main(sys.argv[1], sys.argv[2], "--cut-fillers" in sys.argv[3:])

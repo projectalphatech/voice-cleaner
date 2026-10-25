@@ -20,9 +20,10 @@ API (all routes except `/health` need `Authorization: Bearer <AUDIO_TOKEN>`):
 
 | Method | Path | Body / result |
 |---|---|---|
-| POST | `/jobs` | multipart: `file`, `target` (LUFS), `denoise`, `leveler`, `fmt` → `{id}` |
+| POST | `/jobs` | multipart: `file`, `target` (LUFS), `denoise`, `leveler`, `fmt`, `cut_fillers` → `{id}` |
 | GET | `/jobs/{id}` | `{status: queued, processing, done or error, error, info}` |
 | GET | `/jobs/{id}/result` | the cleaned file |
+| GET | `/jobs/{id}/cuts` | the `cuts.json` list (only for jobs with `cut_fillers=true`) |
 | GET | `/health` | `{ok, queued}` |
 
 ## Worker
@@ -43,3 +44,4 @@ Put Cloudflare Access in front of the Worker before sharing it. Otherwise anyone
 - Worker request bodies cap at 100 MB on the Free and Pro plans. The API itself accepts up to 500 MB.
 - Job status lives in memory and is lost on restart. Job files are never deleted, so add a cron cleanup.
 - One job runs at a time.
+- Filler cutting loads Whisper (`large-v3-turbo`, about 1.6 GB on disk and 2–3 GB RAM) on the first such job and keeps it in memory. On a small CPU VPS, set `WHISPER_MODEL=small`.

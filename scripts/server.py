@@ -56,7 +56,8 @@ def health():
 
 @app.post("/jobs")
 async def create(file: UploadFile = File(...), target: int = Form(-16), denoise: bool = Form(True),
-                 leveler: bool = Form(True), fmt: str = Form("mp3"), authorization: str | None = Header(None)):
+                 leveler: bool = Form(True), fmt: str = Form("mp3"), cut_fillers: bool = Form(False),
+                 authorization: str | None = Header(None)):
     auth(authorization)
     if target not in clean.TARGETS or fmt not in clean.FORMATS:
         raise HTTPException(400, "unsupported target or format")
@@ -75,7 +76,7 @@ async def create(file: UploadFile = File(...), target: int = Form(-16), denoise:
         raise HTTPException(413 if size else 400, "file too large" if size else "empty file")
     stem = re.sub(r"[^\w-]+", "_", Path(file.filename or "audio").stem)[:60] or "audio"
     jobs[jid] = {"status": "queued", "src": src, "dst": d / f"clean.{fmt}", "name": f"{stem}-clean.{fmt}"}
-    q.put((jid, {"target": target, "denoise": denoise, "leveler": leveler}))
+    q.put((jid, {"target": target, "denoise": denoise, "leveler": leveler, "cut_fillers": cut_fillers}))
     return {"id": jid}
 
 
@@ -98,3 +99,12 @@ def result(jid: str, authorization: str | None = Header(None)):
     if job["status"] != "done":
         raise HTTPException(409, "not ready")
     return FileResponse(job["dst"], filename=job["name"])
+
+
+@app.get("/jobs/{jid}/cuts")
+def cuts(jid: str, authorization: str | None = Header(None)):
+    job = get(jid, authorization)
+    path = job["dst"].with_suffix(".cuts.json")
+    if job["status"] != "done" or not path.exists():
+        raise HTTPException(404, "no cut list for this job")
+    return FileResponse(path, media_type="application/json", filename=job["name"].rsplit(".", 1)[0] + ".cuts.json")

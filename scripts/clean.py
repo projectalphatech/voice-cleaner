@@ -152,7 +152,7 @@ def measure(path):
             float(re.findall(r"Peak:\s+(-?[\d.]+) dBFS", err)[-1]))
 
 
-def clean(src, dst, target=-16, denoise=True, leveler=True, denoise_db=12):
+def clean(src, dst, target=-16, denoise=True, leveler=True, denoise_db=12, cut_fillers=False, cut_untranscribed=False):
     fmt = os.path.splitext(dst)[1][1:].lower()
     if fmt not in FORMATS or target not in TARGETS:
         raise ValueError("unsupported format or loudness target")
@@ -163,6 +163,11 @@ def clean(src, dst, target=-16, denoise=True, leveler=True, denoise_db=12):
     chain = ["highpass=f=80"]  # ponytail: fixed 80 Hz; Auphonic adapts per segment
     chain += [f"bandreject=f={hum * k}:t=h:w=2" for k in range(1, 7)] if hum else []
     x = filt(x, ",".join(chain))
+    extra, cuts = {}, None
+    if cut_fillers:
+        import disfluency
+        cuts, extra["language"] = disfluency.detect(x, cut_untranscribed)
+        n = len(x)
     snr = speech_to_noise(x)
     denoise = denoise and snr <= 40  # already clean: a denoiser could only blur the voice
     df = denoise and (os.environ.get("DEEPFILTER_CMD") or shutil.which("deep-filter"))
@@ -170,13 +175,23 @@ def clean(src, dst, target=-16, denoise=True, leveler=True, denoise_db=12):
         x = deepfilter(x, df)
     elif denoise:
         x = filt(x, f"afftdn=nr={denoise_db}:tn=1")
+    if cuts is not None:
+        if len(x) != n:  # cut times would no longer line up
+            for c in cuts:
+                c["applied"] = False
+            extra["cuts_skipped"] = "denoiser changed the audio length"
+        spans = [(c["start"], c["end"]) for c in cuts if c["applied"]]
+        x = disfluency.apply_cuts(x, spans)
+        with open(os.path.splitext(dst)[0] + ".cuts.json", "w", encoding="utf-8") as f:
+            json.dump({"language": extra["language"], "cuts": cuts}, f, ensure_ascii=False, indent=1)
+        extra.update(cuts=len(spans), cut_seconds=round(sum(e - s for s, e in spans), 2))
     if leveler:
         # pauses must cancel the loudness gain applied later, so measure that gain on a first leveler pass
         x = level(x, target - float(loudness(level(x))["input_i"]))
     loudnorm(x, dst, target, fmt)
     lufs, peak = measure(dst)
     return {"hum_hz": hum, "speech_to_noise": round(snr, 1),
-            "denoiser": "deepfilternet" if df else ("afftdn" if denoise else None), "lufs": lufs, "true_peak": peak}
+            "denoiser": "deepfilternet" if df else ("afftdn" if denoise else None), "lufs": lufs, "true_peak": peak, **extra}
 
 
 def selfcheck():
@@ -221,11 +236,14 @@ if __name__ == "__main__":
     ap.add_argument("--target", type=int, default=-16, choices=TARGETS)
     ap.add_argument("--no-denoise", action="store_true")
     ap.add_argument("--no-leveler", action="store_true")
+    ap.add_argument("--cut-fillers", action="store_true", help="remove ums, ahs and stutters (needs faster-whisper)")
+    ap.add_argument("--cut-untranscribed", action="store_true", help="also cut voiced gaps Whisper left untranscribed")
     ap.add_argument("--selfcheck", action="store_true")
     a = ap.parse_args()
     if a.selfcheck:
         selfcheck()
     elif a.src and a.dst:
-        print(clean(a.src, a.dst, a.target, not a.no_denoise, not a.no_leveler))
+        print(clean(a.src, a.dst, a.target, not a.no_denoise, not a.no_leveler,
+                    cut_fillers=a.cut_fillers or a.cut_untranscribed, cut_untranscribed=a.cut_untranscribed))
     else:
         ap.error("give SRC and DST, or --selfcheck")

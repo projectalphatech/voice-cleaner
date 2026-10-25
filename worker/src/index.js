@@ -1,5 +1,5 @@
 // Voice cleaner front end: serves the page and proxies job calls to the VPS with the secret token.
-const API = /^\/api\/jobs(\/[0-9a-f]{32}(\/result)?)?$/;
+const API = /^\/api\/jobs(\/[0-9a-f]{32}(\/result|\/cuts)?)?$/;
 
 export default {
   async fetch(req, env) {
@@ -32,7 +32,7 @@ main{max-width:520px;margin:48px auto;padding:0 16px}
 h1{font-size:1.6rem;margin:0 0 4px}p{color:var(--muted);margin:0 0 24px}
 label{display:block;margin:0 0 14px}select,input[type=file]{display:block;width:100%;margin-top:4px;padding:8px;
 border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;box-sizing:border-box}
-.row{display:flex;gap:20px}.row label{display:flex;gap:8px;align-items:center}
+.row{display:flex;flex-wrap:wrap;gap:0 20px}.row label{display:flex;gap:8px;align-items:center}
 button{width:100%;padding:12px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:1rem;cursor:pointer}
 button:disabled{opacity:.5;cursor:wait}#out{margin-top:20px;min-height:24px}a{color:var(--accent)}
 </style></head><body><main>
@@ -45,7 +45,8 @@ button:disabled{opacity:.5;cursor:wait}#out{margin-top:20px;min-height:24px}a{co
 <option value="-24">-24 LUFS: ATSC A/85 broadcast</option></select></label>
 <label>Output format<select name="fmt"><option>mp3</option><option>m4a</option><option>flac</option><option>wav</option></select></label>
 <div class="row"><label><input type="checkbox" name="denoise" checked>Noise reduction</label>
-<label><input type="checkbox" name="leveler" checked>Leveler</label></div>
+<label><input type="checkbox" name="leveler" checked>Leveler</label>
+<label><input type="checkbox" name="cut_fillers">Remove ums, ahs and stutters</label></div>
 <button>Clean audio</button></form>
 <div id="out" role="status" aria-live="polite"></div>
 </main><script>
@@ -53,7 +54,7 @@ const f = document.getElementById("f"), out = document.getElementById("out"), bt
 f.onsubmit = async (e) => {
   e.preventDefault();
   const fd = new FormData(f);
-  fd.set("denoise", f.denoise.checked); fd.set("leveler", f.leveler.checked);
+  fd.set("denoise", f.denoise.checked); fd.set("leveler", f.leveler.checked); fd.set("cut_fillers", f.cut_fillers.checked);
   btn.disabled = true; out.textContent = "Uploading…";
   try {
     const r = await fetch("/api/jobs", { method: "POST", body: fd });
@@ -65,7 +66,8 @@ f.onsubmit = async (e) => {
       if (s.status === "error") throw new Error(s.error);
       if (s.status === "done") {
         out.innerHTML = '<a href="/api/jobs/' + id + '/result">Download cleaned file</a> · ' +
-          s.info.lufs + " LUFS, peak " + s.info.true_peak + " dBTP";
+          s.info.lufs + " LUFS, peak " + s.info.true_peak + " dBTP" + ("cuts" in s.info ?
+          ' · <a href="/api/jobs/' + id + '/cuts">' + s.info.cuts + " cuts, " + s.info.cut_seconds + " s removed</a>" : "");
         break;
       }
       out.textContent = s.status === "queued" ? "Waiting in queue…" : "Processing…";
